@@ -7,7 +7,7 @@ import "@openzeppelin/contracts/access/Ownable.sol";
 contract JackpotLotteryTicket is ERC1155, Ownable {
     address internal lotteryContract;
     uint256 internal totalSupply;
-    uint8 public constant sizeOfNumber = 6;
+    uint8 public constant SIZE_OF_NUMBER = 6;
 
     struct TicketInfo {
         address owner;
@@ -41,6 +41,7 @@ contract JackpotLotteryTicket is ERC1155, Ownable {
         return ticketInfo[_ticketId].numbers;
     }
 
+    /** WRITE FUNCTIONS */
     function batchMint(
         address _to,
         uint256 _lotteryId,
@@ -55,8 +56,8 @@ contract JackpotLotteryTicket is ERC1155, Ownable {
             tokenIds[i] = totalSupply;
             amounts[i] = 1;
 
-            uint16 start = uint16(i * sizeOfNumber);
-            uint16 end = uint16((i + 1) * sizeOfNumber);
+            uint16 start = uint16(i * SIZE_OF_NUMBER);
+            uint16 end = uint16((i + 1) * SIZE_OF_NUMBER);
             uint16[] calldata numbers = _numbers[start:end];
 
             ticketInfo[totalSupply] = TicketInfo(_to, _lotteryId, numbers, false);
@@ -66,4 +67,6 @@ contract JackpotLotteryTicket is ERC1155, Ownable {
         _mintBatch(_to, tokenIds, amounts, msg.data);
         return tokenIds;
     }
+
+    //TODO; add claim
 }
