@@ -7,6 +7,7 @@ import "@openzeppelin/contracts/utils/Address.sol";
 import "./interfaces/IJackpotLotteryTicket.sol";
 import "./interfaces/IRandomNumberGenerator.sol";
 import "./interfaces/IDateTime.sol";
+import "./interfaces/IPancakePair.sol";
 
 contract JackpotLottery {
     using Address for address;
@@ -14,6 +15,7 @@ contract JackpotLottery {
     IJackpotLotteryTicket internal immutable ticket;
     IRandomNumberGenerator internal immutable randomGenerator;
     IDateTime internal immutable dateTime;
+    IERC20 public immutable myToken;
 
     enum Status {
         NotStarted,
@@ -32,7 +34,7 @@ contract JackpotLottery {
         uint256 lotteryId;
         address token;
         Status status;
-        uint256 ticketPrice;
+        uint256 ticketPrice; // USD
         uint256 startTime;
         uint256 endTime;
         uint16[] winningNumbers;
@@ -52,15 +54,21 @@ contract JackpotLottery {
     uint8 public constant TICKET_SALE_END_HOUR = 20;
     uint8 public constant TICKET_SALE_END_MIN = 30;
 
+    // WBNB/BUSD PancakePair
+    address public constant pancakePairAddress = 0x1B96B92314C44b159149f7E0303511fB2Fc4774f;
+
     constructor(
+        address _token,
         address _ticket,
         address _randomNumberGenerator,
         address _dateTime
     ) {
+        require(_token != address(0), "Invalid token address");
         require(_ticket != address(0), "Invalid ticket address");
         require(_randomNumberGenerator != address(0), "Invalid randomNumberGenerator address");
         require(_dateTime != address(0), "Invalid dateTime address");
 
+        myToken = IERC20(_token);
         ticket = IJackpotLotteryTicket(_ticket);
         randomGenerator = IRandomNumberGenerator(_randomNumberGenerator);
         dateTime = IDateTime(_dateTime);
@@ -88,7 +96,9 @@ contract JackpotLottery {
         require(_token != address(0), "Invalid token address");
         require(msg.value >= PRICE, "Insufficient fee");
         require(_startTime < _endTime, "Invalid start and end time");
-        //TODO; refund
+
+        // refund
+        refundIfOver(PRICE);
 
         uint256 lotteryId = index;
         Status lotteryStatus;
@@ -113,25 +123,36 @@ contract JackpotLottery {
         return lotteryId;
     }
 
-    function buyTicket(
+    function buyTicketWithPartnerToken(
         uint256 _lotteryId,
         uint8 _numOfTickets,
         uint16[] memory _nums
     ) external notContract returns (uint256[] memory) {
-        //TODO; add more validations
-        uint8 weekDay = dateTime.getWeekday(block.timestamp);
-        require(block.timestamp <= (lotteries[_lotteryId].endTime - TICKET_SALE_END_DUE), "Ticket sale ended");
-        uint256 numCheck = SIZE_OF_NUMBER * _numOfTickets;
-        require(_nums.length == numCheck, "Invalid numbers");
-        // check lottery status
-        if (lotteries[_lotteryId].status == Status.NotStarted && lotteries[_lotteryId].startTime >= block.timestamp) {
-            lotteries[_lotteryId].status = Status.Open;
-        }
+        buyTicketValidation(_lotteryId, _numOfTickets, _nums);
+
         LotteryInfo memory lottery = lotteries[_lotteryId];
-        require(lottery.status == Status.Open, "Lottery is not started");
 
         IERC20 token = IERC20(lottery.token);
         token.transferFrom(msg.sender, address(this), lottery.ticketPrice * _numOfTickets);
+        // mint tickets
+        uint256[] memory ticketIds = ticket.batchMint(msg.sender, lottery.lotteryId, _numOfTickets, _nums);
+        return ticketIds;
+    }
+
+    function buyTicketWithBNB(
+        uint256 _lotteryId,
+        uint8 _numOfTickets,
+        uint16[] memory _nums
+    ) external payable notContract returns (uint256[] memory) {
+        buyTicketValidation(_lotteryId, _numOfTickets, _nums);
+
+        LotteryInfo memory lottery = lotteries[_lotteryId];
+        // calculate BNB amount
+        (uint256 reserve0, uint256 reserve1, ) = _getBNBPrice();
+        uint256 amount = (lottery.ticketPrice * reserve0 * 10**18) / reserve1;
+        require(msg.value >= amount * _numOfTickets, "Insufficient amount");
+        // refund
+        refundIfOver(amount * _numOfTickets);
         // mint tickets
         uint256[] memory ticketIds = ticket.batchMint(msg.sender, lottery.lotteryId, _numOfTickets, _nums);
         return ticketIds;
@@ -164,6 +185,15 @@ contract JackpotLottery {
         lotteries[_lotteryId].winningNumbers = _splitNumber(_randomNumber);
     }
 
+    /** VIEW FUNCTIONS */
+    /**
+     * @dev return BNB price in USD
+     */
+    function getBNBPrice() external view returns (uint256, uint256) {
+        (uint256 reserve0, uint256 reserve1, ) = _getBNBPrice();
+        return (reserve0, reserve1);
+    }
+
     /** INTERNAL FUNCTIONS */
     function _splitNumber(uint256 _randomNumber) internal pure returns (uint16[] memory) {
         uint16[] memory winningNumbers = new uint16[](SIZE_OF_NUMBER);
@@ -184,5 +214,45 @@ contract JackpotLottery {
             }
         }
         return numOfMatches;
+    }
+
+    function buyTicketValidation(
+        uint256 _lotteryId,
+        uint8 _numOfTickets,
+        uint16[] memory _nums
+    ) internal {
+        //TODO; add more validations
+        uint8 weekDay = dateTime.getWeekday(block.timestamp);
+        require(block.timestamp <= (lotteries[_lotteryId].endTime - TICKET_SALE_END_DUE), "Ticket sale ended");
+        uint256 numCheck = SIZE_OF_NUMBER * _numOfTickets;
+        require(_nums.length == numCheck, "Invalid numbers");
+        // check lottery status
+        if (lotteries[_lotteryId].status == Status.NotStarted && lotteries[_lotteryId].startTime >= block.timestamp) {
+            lotteries[_lotteryId].status = Status.Open;
+        }
+        require(lotteries[_lotteryId].status == Status.Open, "Lottery is not started");
+    }
+
+    /**
+     * @dev return BNB price in USD
+     */
+    function _getBNBPrice()
+        internal
+        view
+        returns (
+            uint112,
+            uint112,
+            uint32
+        )
+    {
+        return IPancakePair(pancakePairAddress).getReserves();
+    }
+
+    /** PRIVATE FUNCTIONS */
+    function refundIfOver(uint256 _price) private {
+        require(_price >= 0 && msg.value >= _price, "No need to refund");
+        if (msg.value > _price) {
+            payable(msg.sender).transfer(msg.value - _price);
+        }
     }
 }
