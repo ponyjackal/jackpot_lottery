@@ -120,10 +120,15 @@ contract JackpotLottery {
     function claimRewards(uint256 _lotteryId, uint256[] calldata _ticketIds) external notContract {
         LotteryInfo memory lottery = lotteries[_lotteryId];
         require(block.timestamp >= lottery.startTime + lottery.lotteryPeriod, "Lottery is not end yet");
-        if (lottery.status == Status.Open) {
-            lotteries[_lotteryId].status = Status.Closed;
-            requestId = randomGenerator.requestRandomWords(lottery.lotteryId);
-            //TODO; check matching numbers and give rewards
+        require(lottery.status == Status.Completed, "Winning numbers are not revealed yet");
+
+        for (uint256 i = 0; i < _ticketIds.length; i++) {
+            require(ticket.getOwnerOfTicket(_ticketIds[i]) == msg.sender, "Invalid owner");
+            if (!ticket.getStatusOfTicket(_ticketIds[i])) {
+                require(ticket.claimTicket(_ticketIds[i], _lotteryId), "Invalid ticket numbers");
+                uint8 matches = _findMatches(ticket.getTicketNumer(_ticketIds[i]), lottery.winningNumbers);
+                //TODO; give rewards
+            }
         }
     }
 
@@ -149,5 +154,15 @@ contract JackpotLottery {
             winningNumbers[i] = uint16(numberRepresentation % 10);
         }
         return winningNumbers;
+    }
+
+    function _findMatches(uint16[] memory _numbers, uint16[] memory _winningNumbers) internal pure returns (uint8) {
+        uint8 numOfMatches;
+        for (uint8 i = 0; i < SIZE_OF_NUMBER; i++) {
+            if (_numbers[i] == _winningNumbers[i]) {
+                numOfMatches++;
+            }
+        }
+        return numOfMatches;
     }
 }

@@ -15,8 +15,9 @@ contract JackpotLotteryTicket is ERC1155, Ownable {
         uint16[] numbers;
         bool claimed;
     }
-
+    // token id => ticket info
     mapping(uint256 => TicketInfo) internal ticketInfo;
+    // user => lottery id => ticket ids
     mapping(address => mapping(uint256 => uint256[])) internal userTickets;
 
     constructor(string memory _uri, address _lottery) ERC1155(_uri) {
@@ -39,6 +40,14 @@ contract JackpotLotteryTicket is ERC1155, Ownable {
 
     function getTicketNumer(uint256 _ticketId) external view returns (uint16[] memory) {
         return ticketInfo[_ticketId].numbers;
+    }
+
+    function getOwnerOfTicket(uint256 _ticketId) external view returns (address) {
+        return ticketInfo[_ticketId].owner;
+    }
+
+    function getStatusOfTicket(uint256 _ticketId) external view returns (bool) {
+        return ticketInfo[_ticketId].claimed;
     }
 
     /** EXTERNAL FUNCTIONS */
@@ -68,5 +77,17 @@ contract JackpotLotteryTicket is ERC1155, Ownable {
         return tokenIds;
     }
 
-    //TODO; add claim
+    function claimTicket(uint256 _ticketId, uint256 _lotteryId) external onlyLottery returns (bool) {
+        require(!ticketInfo[_ticketId].claimed, "Ticket already claimed");
+        require(ticketInfo[_ticketId].lotteryId == _lotteryId, "Invalid lottery id");
+
+        for (uint8 i = 0; i < SIZE_OF_NUMBER; i++) {
+            if (ticketInfo[_ticketId].numbers[i] >= 10) {
+                return false;
+            }
+        }
+
+        ticketInfo[_ticketId].claimed = true;
+        return true;
+    }
 }
