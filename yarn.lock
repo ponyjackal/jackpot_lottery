@@ -271,6 +271,13 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@chainlink/contracts@npm:^0.4.1":
+  version: 0.4.1
+  resolution: "@chainlink/contracts@npm:0.4.1"
+  checksum: 5d5e35cb47ffaad94aff236762b17bfb5e9030f1b0d93edac92f57a16d34a7b0cb7565a8692fe14d1e78466aeac24dcc344e9b5f674e28f5cda464c8f2fe7202
+  languageName: node
+  linkType: hard
+
 "@commitlint/cli@npm:^17.0.3":
   version: 17.0.3
   resolution: "@commitlint/cli@npm:17.0.3"
@@ -1224,6 +1231,7 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "@prb/solidity-template@workspace:."
   dependencies:
+    "@chainlink/contracts": ^0.4.1
     "@commitlint/cli": ^17.0.3
     "@commitlint/config-conventional": ^17.0.3
     "@ethersproject/abi": ^5.6.4

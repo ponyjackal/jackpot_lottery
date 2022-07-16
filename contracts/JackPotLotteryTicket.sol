@@ -41,7 +41,7 @@ contract JackpotLotteryTicket is ERC1155, Ownable {
         return ticketInfo[_ticketId].numbers;
     }
 
-    /** WRITE FUNCTIONS */
+    /** EXTERNAL FUNCTIONS */
     function batchMint(
         address _to,
         uint256 _lotteryId,
