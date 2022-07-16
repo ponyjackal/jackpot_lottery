@@ -22,7 +22,6 @@ contract JackpotLottery {
 
     //TODO; add timestamp
     //TODO; add rewards
-    //TODO; update lottery contract from factory module to manage all lotteries
 
     uint8 public constant SIZE_OF_NUMBER = 6;
     uint256 public constant PRICE = 1 ether;
@@ -37,7 +36,7 @@ contract JackpotLottery {
         uint256 ticketPrice;
         uint256 startTime;
         uint256 lotteryPeriod;
-        uint256 winningNumbers;
+        uint16[] winningNumbers;
     }
     // id => LotteryInfo mapping
     mapping(uint256 => LotteryInfo) internal lotteries;
@@ -80,6 +79,7 @@ contract JackpotLottery {
         } else {
             lotteryStatus = Status.NotStarted;
         }
+        uint16[] memory winningNumbers = new uint16[](SIZE_OF_NUMBER);
         LotteryInfo memory lottery = LotteryInfo(
             lotteryId,
             _token,
@@ -87,7 +87,7 @@ contract JackpotLottery {
             _ticketPrice,
             _startTime,
             _lotteryPeriod,
-            0
+            winningNumbers
         );
         lotteries[lotteryId] = lottery;
         index++;
@@ -132,12 +132,22 @@ contract JackpotLottery {
         uint256 _requestId,
         uint256 _randomNumber
     ) external onlyRandomGenerator {
-        LotteryInfo memory lottery = lotteries[_lotteryId];
-        require(lottery.status == Status.Closed, "Lottery is not closed");
+        require(lotteries[_lotteryId].status == Status.Closed, "Lottery is not closed");
         require(requestId == _requestId, "Invalid request");
 
-        lotteries[_lotteryId].winningNumbers = _randomNumber;
+        lotteries[_lotteryId].status = Status.Closed;
+        lotteries[_lotteryId].winningNumbers = _splitNumber(_randomNumber);
     }
 
     /** INTERNAL FUNCTIONS */
+    function _splitNumber(uint256 _randomNumber) internal pure returns (uint16[] memory) {
+        uint16[] memory winningNumbers = new uint16[](SIZE_OF_NUMBER);
+
+        for (uint8 i = 0; i < SIZE_OF_NUMBER; i++) {
+            bytes32 hashOfRandom = keccak256(abi.encodePacked(_randomNumber, i));
+            uint256 numberRepresentation = uint256(hashOfRandom);
+            winningNumbers[i] = uint16(numberRepresentation % 10);
+        }
+        return winningNumbers;
+    }
 }
