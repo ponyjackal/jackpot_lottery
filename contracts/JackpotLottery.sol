@@ -6,12 +6,14 @@ import "@openzeppelin/contracts/utils/Address.sol";
 
 import "./interfaces/IJackpotLotteryTicket.sol";
 import "./interfaces/IRandomNumberGenerator.sol";
+import "./interfaces/IDateTime.sol";
 
 contract JackpotLottery {
     using Address for address;
 
     IJackpotLotteryTicket internal immutable ticket;
     IRandomNumberGenerator internal immutable randomGenerator;
+    IDateTime internal immutable dateTime;
 
     enum Status {
         NotStarted,
@@ -23,9 +25,6 @@ contract JackpotLottery {
     //TODO; add timestamp
     //TODO; add rewards
 
-    uint8 public constant SIZE_OF_NUMBER = 6;
-    uint256 public constant PRICE = 1 ether;
-
     uint256 public index;
     uint256 internal requestId;
 
@@ -35,18 +34,36 @@ contract JackpotLottery {
         Status status;
         uint256 ticketPrice;
         uint256 startTime;
-        uint256 lotteryPeriod;
+        uint256 endTime;
         uint16[] winningNumbers;
     }
+
     // id => LotteryInfo mapping
     mapping(uint256 => LotteryInfo) internal lotteries;
 
-    constructor(address _ticket, address _randomNumberGenerator) {
+    uint256 public constant PRICE = 1 ether;
+    uint8 public constant SIZE_OF_NUMBER = 6;
+    uint256 public constant TICKET_SALE_END_DUE = 30 minutes;
+
+    uint8 public constant WED_DAY = 2;
+    uint8 public constant SAT_DAY = 5;
+    uint8 public constant LOTTERY_START_TIME_HOUR = 21;
+    uint8 public constant LOTTERY_START_TIME_MIN = 0;
+    uint8 public constant TICKET_SALE_END_HOUR = 20;
+    uint8 public constant TICKET_SALE_END_MIN = 30;
+
+    constructor(
+        address _ticket,
+        address _randomNumberGenerator,
+        address _dateTime
+    ) {
         require(_ticket != address(0), "Invalid ticket address");
         require(_randomNumberGenerator != address(0), "Invalid randomNumberGenerator address");
+        require(_dateTime != address(0), "Invalid dateTime address");
 
         ticket = IJackpotLotteryTicket(_ticket);
         randomGenerator = IRandomNumberGenerator(_randomNumberGenerator);
+        dateTime = IDateTime(_dateTime);
     }
 
     /** MODIFIERS */
@@ -66,10 +83,11 @@ contract JackpotLottery {
         address _token,
         uint256 _ticketPrice,
         uint256 _startTime,
-        uint256 _lotteryPeriod
+        uint256 _endTime
     ) external payable notContract returns (uint256) {
         require(_token != address(0), "Invalid token address");
         require(msg.value >= PRICE, "Insufficient fee");
+        require(_startTime < _endTime, "Invalid start and end time");
         //TODO; refund
 
         uint256 lotteryId = index;
@@ -86,7 +104,7 @@ contract JackpotLottery {
             Status.Open,
             _ticketPrice,
             _startTime,
-            _lotteryPeriod,
+            _endTime,
             winningNumbers
         );
         lotteries[lotteryId] = lottery;
@@ -101,6 +119,8 @@ contract JackpotLottery {
         uint16[] memory _nums
     ) external notContract returns (uint256[] memory) {
         //TODO; add more validations
+        uint8 weekDay = dateTime.getWeekday(block.timestamp);
+        require(block.timestamp <= (lotteries[_lotteryId].endTime - TICKET_SALE_END_DUE), "Ticket sale ended");
         uint256 numCheck = SIZE_OF_NUMBER * _numOfTickets;
         require(_nums.length == numCheck, "Invalid numbers");
         // check lottery status
@@ -119,7 +139,7 @@ contract JackpotLottery {
 
     function claimRewards(uint256 _lotteryId, uint256[] calldata _ticketIds) external notContract {
         LotteryInfo memory lottery = lotteries[_lotteryId];
-        require(block.timestamp >= lottery.startTime + lottery.lotteryPeriod, "Lottery is not end yet");
+        require(block.timestamp >= lottery.endTime, "Lottery is not end yet");
         require(lottery.status == Status.Completed, "Winning numbers are not revealed yet");
 
         for (uint256 i = 0; i < _ticketIds.length; i++) {
