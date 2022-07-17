@@ -20,9 +20,15 @@ contract JackpotLotteryTicket is ERC1155, Ownable {
     // lottery id => TicketInfo
     mapping(uint256 => TicketInfo[]) internal lotteryTickets;
 
+    //-------------------------------------------------------------------------
+    // EVENTS
+    //-------------------------------------------------------------------------
+    event LotteryUpdated(address lottery);
+    event TicketsMinted(address indexed receiver, uint256 indexed lotteryId, uint8 quantity);
+    event TicketClaimed(uint256 indexed ticketId, uint256 indexed lotteryId);
+
     constructor(string memory _uri, address _lottery) ERC1155(_uri) {
         require(_lottery != address(0), "Invalid lottery address");
-
         lotteryContract = _lottery;
     }
 
@@ -33,8 +39,14 @@ contract JackpotLotteryTicket is ERC1155, Ownable {
     }
 
     /** SETTER FUNCTIONS */
+    /**
+     * @dev update lottery contract
+     * @param _lottery new lottery address
+     */
     function setLottery(address _lottery) external onlyOwner {
+        require(_lottery != address(0), "Invalid lottery address");
         lotteryContract = _lottery;
+        emit LotteryUpdated(_lottery);
     }
 
     /** VIEW FUNCTIONS */
@@ -60,6 +72,13 @@ contract JackpotLotteryTicket is ERC1155, Ownable {
     }
 
     /** EXTERNAL FUNCTIONS */
+    /**
+     * @dev batch mint tickets, only lottery contract can call this
+     * @param _to receiver address
+     * @param _lotteryId lottery id
+     * @param _quantity amount of tickets to mint
+     * @param _numbers numbers in the tickets
+     */
     function batchMint(
         address _to,
         uint256 _lotteryId,
@@ -84,9 +103,15 @@ contract JackpotLotteryTicket is ERC1155, Ownable {
         }
 
         _mintBatch(_to, tokenIds, amounts, msg.data);
+        emit TicketsMinted(_to, _lotteryId, _quantity);
         return tokenIds;
     }
 
+    /**
+     * @dev claim a ticket, only lottery contract can call this
+     * @param _ticketId ticket id
+     * @param _lotteryId lottery id
+     */
     function claimTicket(uint256 _ticketId, uint256 _lotteryId) external onlyLottery returns (bool) {
         require(!ticketInfo[_ticketId].claimed, "Ticket already claimed");
         require(ticketInfo[_ticketId].lotteryId == _lotteryId, "Invalid lottery id");
@@ -98,6 +123,7 @@ contract JackpotLotteryTicket is ERC1155, Ownable {
         }
 
         ticketInfo[_ticketId].claimed = true;
+        emit TicketClaimed(_ticketId, _lotteryId);
         return true;
     }
 }
