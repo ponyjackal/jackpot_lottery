@@ -23,8 +23,6 @@ contract ChainlinkAggregator is VRFConsumerBaseV2, ChainlinkClient {
     address private constant pancakePairAddress = 0x1B96B92314C44b159149f7E0303511fB2Fc4774f;
     uint256 private constant ORACLE_PRECISION = 1000000000000000000;
     uint256 private constant ORACLE_PAYMENT = 1 * 10**17; // solium-disable-line zeppelin/no-arithmetic-operations
-    // How long will the contract assume rate update is not needed
-    uint256 public constant rateFreshPeriod = 1 hours;
     // Do not allow the oracle to submit times any further forward into the future than this constant.
     uint256 public constant ORACLE_FUTURE_LIMIT = 10 minutes;
 
@@ -34,17 +32,11 @@ contract ChainlinkAggregator is VRFConsumerBaseV2, ChainlinkClient {
     uint256[] internal words;
     bytes32 public oracleJobId;
 
-    struct Token {
-        string tokenId; // coingecko api tokenId
-        uint256 price;
-        uint256 lastUpdatedTime;
-    }
     struct Request {
         uint256 timestamp;
+        uint256 lotteryId;
         string tokenId;
     }
-    // token id => Token info
-    mapping(string => Token) private tokens;
     // request id => Request info
     mapping(bytes32 => Request) private requests;
 
@@ -107,9 +99,7 @@ contract ChainlinkAggregator is VRFConsumerBaseV2, ChainlinkClient {
      * @notice Initiatiate a price request via chainlink. Provide both the
      * @param tokenId congecko token id
      */
-    function requestCryptoPrice(string memory tokenId) internal {
-        require(block.timestamp >= (tokens[tokenId].lastUpdatedTime + rateFreshPeriod), "No need to update rates");
-
+    function requestCryptoPrice(uint256 lotteryId, string memory tokenId) external onlyLottery returns (bytes32) {
         Chainlink.Request memory req = buildChainlinkRequest(oracleJobId, address(this), this.fulfill.selector);
         string memory requestURL = string(
             abi.encodePacked("https://api.coingecko.com/api/v3/simple/price?ids=", tokenId, "&vs_currencies=usd")
@@ -122,7 +112,9 @@ contract ChainlinkAggregator is VRFConsumerBaseV2, ChainlinkClient {
         req.addInt("times", int256(ORACLE_PRECISION));
 
         bytes32 requestId = sendChainlinkRequest(req, ORACLE_PAYMENT);
-        requests[requestId] = Request(block.timestamp, tokenId);
+        requests[requestId] = Request(block.timestamp, lotteryId, tokenId);
+
+        return requestId;
     }
 
     /** CALLBACK FUNCTIONS */
@@ -135,11 +127,7 @@ contract ChainlinkAggregator is VRFConsumerBaseV2, ChainlinkClient {
         validateTimestamp(_requestId)
         recordChainlinkFulfillment(_requestId)
     {
-        tokens[requests[_requestId].tokenId] = Token(
-            requests[_requestId].tokenId,
-            _price,
-            requests[_requestId].timestamp
-        );
+        IJackpotLottery(lottery).updateTokenPrice(_requestId, requests[_requestId].lotteryId, _price);
 
         delete requests[_requestId];
     }

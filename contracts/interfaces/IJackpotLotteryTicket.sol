@@ -2,6 +2,13 @@
 pragma solidity >=0.8.4;
 
 interface IJackpotLotteryTicket {
+    struct TicketInfo {
+        address owner;
+        uint256 lotteryId;
+        uint16[] numbers;
+        bool claimed;
+    }
+
     /** VIEW FUNCTIONS */
     function getTotalSupply() external view returns (uint256);
 
@@ -10,6 +17,8 @@ interface IJackpotLotteryTicket {
     function getOwnerOfTicket(uint256 _ticketId) external view returns (address);
 
     function getStatusOfTicket(uint256 _ticketId) external view returns (bool);
+
+    function getTickersOfLottery(uint256 _lotteryId) external view returns (TicketInfo[] memory);
 
     /** WRITE FUNCTIONS */
     function batchMint(

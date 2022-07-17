@@ -7,4 +7,10 @@ interface IJackpotLottery {
         uint256 _requestId,
         uint256 _randomNumber
     ) external;
+
+    function updateTokenPrice(
+        bytes32 _requestId,
+        uint256 _lotteryId,
+        uint256 _price
+    ) external;
 }

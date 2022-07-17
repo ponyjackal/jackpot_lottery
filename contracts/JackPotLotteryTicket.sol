@@ -17,8 +17,8 @@ contract JackpotLotteryTicket is ERC1155, Ownable {
     }
     // token id => ticket info
     mapping(uint256 => TicketInfo) internal ticketInfo;
-    // user => lottery id => ticket ids
-    mapping(address => mapping(uint256 => uint256[])) internal userTickets;
+    // lottery id => TicketInfo
+    mapping(uint256 => TicketInfo[]) internal lotteryTickets;
 
     constructor(string memory _uri, address _lottery) ERC1155(_uri) {
         require(_lottery != address(0), "Invalid lottery address");
@@ -32,22 +32,31 @@ contract JackpotLotteryTicket is ERC1155, Ownable {
         _;
     }
 
+    /** SETTER FUNCTIONS */
+    function setLottery(address _lottery) external onlyOwner {
+        lotteryContract = _lottery;
+    }
+
     /** VIEW FUNCTIONS */
 
-    function getTotalSupply() external view returns (uint256) {
+    function getTotalSupply() external view onlyLottery returns (uint256) {
         return totalSupply;
     }
 
-    function getTicketNumer(uint256 _ticketId) external view returns (uint16[] memory) {
+    function getTicketNumer(uint256 _ticketId) external view onlyLottery returns (uint16[] memory) {
         return ticketInfo[_ticketId].numbers;
     }
 
-    function getOwnerOfTicket(uint256 _ticketId) external view returns (address) {
+    function getOwnerOfTicket(uint256 _ticketId) external view onlyLottery returns (address) {
         return ticketInfo[_ticketId].owner;
     }
 
-    function getStatusOfTicket(uint256 _ticketId) external view returns (bool) {
+    function getStatusOfTicket(uint256 _ticketId) external view onlyLottery returns (bool) {
         return ticketInfo[_ticketId].claimed;
+    }
+
+    function getTickersOfLottery(uint256 _lotteryId) external view onlyLottery returns (TicketInfo[] memory) {
+        return lotteryTickets[_lotteryId];
     }
 
     /** EXTERNAL FUNCTIONS */
@@ -69,8 +78,9 @@ contract JackpotLotteryTicket is ERC1155, Ownable {
             uint16 end = uint16((i + 1) * SIZE_OF_NUMBER);
             uint16[] calldata numbers = _numbers[start:end];
 
-            ticketInfo[totalSupply] = TicketInfo(_to, _lotteryId, numbers, false);
-            userTickets[_to][_lotteryId].push(totalSupply);
+            TicketInfo memory ticket = TicketInfo(_to, _lotteryId, numbers, false);
+            ticketInfo[totalSupply] = ticket;
+            lotteryTickets[_lotteryId].push(ticket);
         }
 
         _mintBatch(_to, tokenIds, amounts, msg.data);

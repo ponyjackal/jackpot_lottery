@@ -8,4 +8,6 @@ interface IChainlinkAggregator {
     function requestRandomWords(uint256 lotteryId) external returns (uint256);
 
     function getBNBPrice() external view returns (uint256, uint256);
+
+    function requestCryptoPrice(string memory tokenId) external returns (bytes32);
 }
