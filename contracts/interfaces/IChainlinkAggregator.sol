@@ -9,5 +9,5 @@ interface IChainlinkAggregator {
 
     function getBNBPrice() external view returns (uint256, uint256);
 
-    function requestCryptoPrice(string memory tokenId) external returns (bytes32);
+    function requestCryptoPrice(uint256 lotteryId, string memory tokenId) external returns (bytes32);
 }

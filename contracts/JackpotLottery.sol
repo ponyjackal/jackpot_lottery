@@ -25,6 +25,10 @@ contract JackpotLottery is Ownable {
     //TODO; add timestamp
     //TODO; add rewards
 
+    string public myTokenId; // coingecko token id
+    uint256 public myTokenPrice;
+    uint256 internal myTokenPriceLastUpdated;
+
     uint256 public index;
     uint256 internal requestId;
     bytes32 internal priceRequestId;
@@ -50,14 +54,14 @@ contract JackpotLottery is Ownable {
     uint256 public constant TICKET_SALE_END_DUE = 30 minutes;
     uint8 public constant SIZE_OF_NUMBER = 6;
     // How long will the contract assume rate update is not needed
-    uint256 public constant rateFreshPeriod = 1 hours;
+    uint256 public constant RATE_FRESH_PERIOD = 1 hours;
 
     //-------------------------------------------------------------------------
     // EVENTS
     //-------------------------------------------------------------------------
 
     event TicketUpdated(address ticket);
-    event TokenUpdated(address token);
+    event TokenUpdated(address token, string tokenId);
     event ChainlinkAggregatorUpdated(address chainlinkAggregator);
 
     event NewLotteryCreate(
@@ -76,6 +80,7 @@ contract JackpotLottery is Ownable {
     /** CONSTRUCTOR */
     constructor(
         address _token,
+        string memory _tokenId,
         address _ticket,
         address _chainlinkAggregator
     ) {
@@ -84,8 +89,11 @@ contract JackpotLottery is Ownable {
         require(_chainlinkAggregator != address(0), "Invalid chainlinkAggregator address");
 
         myToken = IERC20(_token);
+        myTokenId = _tokenId;
         ticket = IJackpotLotteryTicket(_ticket);
         chainlinkAggregator = IChainlinkAggregator(_chainlinkAggregator);
+        //request price update
+        priceRequestId = chainlinkAggregator.requestCryptoPrice(0, _tokenId);
     }
 
     /** MODIFIERS */
@@ -114,11 +122,15 @@ contract JackpotLottery is Ownable {
     /**
      * @dev update token contract
      * @param _token new token address
+     * @param _tokenId new tokenId
      */
-    function setToken(address _token) external onlyOwner {
+    function setToken(address _token, string memory _tokenId) external onlyOwner {
         require(_token != address(0), "Invalid ticket address");
         myToken = IERC20(_token);
-        emit TokenUpdated(_token);
+        myTokenId = _tokenId;
+        //request price update
+        priceRequestId = chainlinkAggregator.requestCryptoPrice(0, _tokenId);
+        emit TokenUpdated(_token, _tokenId);
     }
 
     /**
@@ -153,8 +165,8 @@ contract JackpotLottery is Ownable {
 
         // refund
         refundIfOver(PRICE);
-
-        uint256 lotteryId = index;
+        // lottery id starts from 1
+        index++;
         Status lotteryStatus;
         if (_startTime >= block.timestamp) {
             lotteryStatus = Status.Open;
@@ -163,7 +175,7 @@ contract JackpotLottery is Ownable {
         }
         uint16[] memory winningNumbers = new uint16[](SIZE_OF_NUMBER);
         LotteryInfo memory lottery = LotteryInfo(
-            lotteryId,
+            index,
             _token,
             0,
             0,
@@ -175,11 +187,10 @@ contract JackpotLottery is Ownable {
             winningNumbers
         );
         // request token price update
-        priceRequestId = chainlinkAggregator.requestCryptoPrice(_tokenId);
-        lotteries[lotteryId] = lottery;
-        index++;
+        priceRequestId = chainlinkAggregator.requestCryptoPrice(index, _tokenId);
+        lotteries[index] = lottery;
 
-        emit NewLotteryCreate(lotteryId, msg.sender, _token, _ticketPrice, _startTime, _endTime);
+        emit NewLotteryCreate(index, msg.sender, _token, _ticketPrice, _startTime, _endTime);
     }
 
     /**
@@ -209,6 +220,32 @@ contract JackpotLottery is Ownable {
     }
 
     /**
+     * @dev batch buy a ticket with my token
+     * @param _lotteryId lottery id to buy
+     * @param _numOfTickets number of tickets to buy
+     * @param _nums numbers user put in the tickets
+     */
+    function buyTicketWithMyToken(
+        uint256 _lotteryId,
+        uint8 _numOfTickets,
+        uint16[] memory _nums
+    ) external notContract {
+        buyTicketValidation(_lotteryId, _numOfTickets, _nums);
+        LotteryInfo memory lottery = lotteries[_lotteryId];
+        require(myTokenPrice != 0, "My Token price is not set");
+        // if price is not fresh, request price update
+        if (myTokenPriceLastUpdated <= (block.timestamp - RATE_FRESH_PERIOD)) {
+            priceRequestId = chainlinkAggregator.requestCryptoPrice(0, myTokenId);
+        }
+        uint256 tokenPerTicket = (lottery.ticketPrice * 10**18) / myTokenPrice / 10**18;
+        myToken.transferFrom(msg.sender, address(this), tokenPerTicket * _numOfTickets);
+        // mint tickets
+        ticket.batchMint(msg.sender, lottery.lotteryId, _numOfTickets, _nums);
+
+        emit TicketBought(_lotteryId, msg.sender, 1, _numOfTickets);
+    }
+
+    /**
      * @dev batch buy a ticket with partner token
      * @param _lotteryId lottery id to buy
      * @param _numOfTickets number of tickets to buy
@@ -220,11 +257,14 @@ contract JackpotLottery is Ownable {
         uint16[] memory _nums
     ) external notContract {
         buyTicketValidation(_lotteryId, _numOfTickets, _nums);
-
         LotteryInfo memory lottery = lotteries[_lotteryId];
-
-        IERC20 token = IERC20(lottery.token);
-        token.transferFrom(msg.sender, address(this), lottery.ticketPrice * _numOfTickets);
+        require(lottery.tokenPrice != 0, "Partner Token price is not set");
+        // if price is not fresh, request price update
+        if (lottery.priceLastUpdatedTime <= (block.timestamp - RATE_FRESH_PERIOD)) {
+            priceRequestId = chainlinkAggregator.requestCryptoPrice(_lotteryId, lottery.tokenId);
+        }
+        uint256 tokenPerTicket = (lottery.ticketPrice * 10**18) / lottery.tokenPrice / 10**18;
+        IERC20(lottery.token).transferFrom(msg.sender, address(this), tokenPerTicket * _numOfTickets);
         // mint tickets
         ticket.batchMint(msg.sender, lottery.lotteryId, _numOfTickets, _nums);
 
@@ -287,8 +327,13 @@ contract JackpotLottery is Ownable {
     ) external onlyChainlinkAggregator {
         require(priceRequestId == _requestId, "Invalid request");
 
-        lotteries[_lotteryId].tokenPrice = _price;
-        lotteries[_lotteryId].priceLastUpdatedTime = block.timestamp;
+        if (_lotteryId != 0) {
+            lotteries[_lotteryId].tokenPrice = _price;
+            lotteries[_lotteryId].priceLastUpdatedTime = block.timestamp;
+        } else {
+            myTokenPrice = _price;
+            myTokenPriceLastUpdated = block.timestamp;
+        }
     }
 
     /** INTERNAL FUNCTIONS */
