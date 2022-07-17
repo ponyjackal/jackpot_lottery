@@ -5,15 +5,14 @@ import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/utils/Address.sol";
 
 import "./interfaces/IJackpotLotteryTicket.sol";
-import "./interfaces/IRandomNumberGenerator.sol";
+import "./interfaces/IChainlinkAggregator.sol";
 import "./interfaces/IDateTime.sol";
-import "./interfaces/IPancakePair.sol";
 
 contract JackpotLottery {
     using Address for address;
 
     IJackpotLotteryTicket internal immutable ticket;
-    IRandomNumberGenerator internal immutable randomGenerator;
+    IChainlinkAggregator internal immutable chainlinkAggregator;
     IDateTime internal immutable dateTime;
     IERC20 public immutable myToken;
 
@@ -29,6 +28,7 @@ contract JackpotLottery {
 
     uint256 public index;
     uint256 internal requestId;
+    bytes32 internal priceRequestId;
 
     struct LotteryInfo {
         uint256 lotteryId;
@@ -44,8 +44,8 @@ contract JackpotLottery {
     mapping(uint256 => LotteryInfo) internal lotteries;
 
     uint256 public constant PRICE = 1 ether;
-    uint8 public constant SIZE_OF_NUMBER = 6;
     uint256 public constant TICKET_SALE_END_DUE = 30 minutes;
+    uint8 public constant SIZE_OF_NUMBER = 6;
 
     uint8 public constant WED_DAY = 2;
     uint8 public constant SAT_DAY = 5;
@@ -54,23 +54,20 @@ contract JackpotLottery {
     uint8 public constant TICKET_SALE_END_HOUR = 20;
     uint8 public constant TICKET_SALE_END_MIN = 30;
 
-    // WBNB/BUSD PancakePair
-    address public constant pancakePairAddress = 0x1B96B92314C44b159149f7E0303511fB2Fc4774f;
-
     constructor(
         address _token,
         address _ticket,
-        address _randomNumberGenerator,
+        address _chainlinkAggregator,
         address _dateTime
     ) {
         require(_token != address(0), "Invalid token address");
         require(_ticket != address(0), "Invalid ticket address");
-        require(_randomNumberGenerator != address(0), "Invalid randomNumberGenerator address");
+        require(_chainlinkAggregator != address(0), "Invalid chainlinkAggregator address");
         require(_dateTime != address(0), "Invalid dateTime address");
 
         myToken = IERC20(_token);
         ticket = IJackpotLotteryTicket(_ticket);
-        randomGenerator = IRandomNumberGenerator(_randomNumberGenerator);
+        chainlinkAggregator = IChainlinkAggregator(_chainlinkAggregator);
         dateTime = IDateTime(_dateTime);
     }
 
@@ -81,8 +78,8 @@ contract JackpotLottery {
         _;
     }
 
-    modifier onlyRandomGenerator() {
-        require(msg.sender == address(randomGenerator), "Not a randomGenerator");
+    modifier onlyChainlinkAggregator() {
+        require(msg.sender == address(chainlinkAggregator), "Not a chainlinkAggregator");
         _;
     }
 
@@ -148,7 +145,7 @@ contract JackpotLottery {
 
         LotteryInfo memory lottery = lotteries[_lotteryId];
         // calculate BNB amount
-        (uint256 reserve0, uint256 reserve1, ) = _getBNBPrice();
+        (uint256 reserve0, uint256 reserve1) = chainlinkAggregator.getBNBPrice();
         uint256 amount = (lottery.ticketPrice * reserve0 * 10**18) / reserve1;
         require(msg.value >= amount * _numOfTickets, "Insufficient amount");
         // refund
@@ -177,21 +174,12 @@ contract JackpotLottery {
         uint256 _lotteryId,
         uint256 _requestId,
         uint256 _randomNumber
-    ) external onlyRandomGenerator {
+    ) external onlyChainlinkAggregator {
         require(lotteries[_lotteryId].status == Status.Closed, "Lottery is not closed");
         require(requestId == _requestId, "Invalid request");
 
         lotteries[_lotteryId].status = Status.Closed;
         lotteries[_lotteryId].winningNumbers = _splitNumber(_randomNumber);
-    }
-
-    /** VIEW FUNCTIONS */
-    /**
-     * @dev return BNB price in USD
-     */
-    function getBNBPrice() external view returns (uint256, uint256) {
-        (uint256 reserve0, uint256 reserve1, ) = _getBNBPrice();
-        return (reserve0, reserve1);
     }
 
     /** INTERNAL FUNCTIONS */
@@ -231,21 +219,6 @@ contract JackpotLottery {
             lotteries[_lotteryId].status = Status.Open;
         }
         require(lotteries[_lotteryId].status == Status.Open, "Lottery is not started");
-    }
-
-    /**
-     * @dev return BNB price in USD
-     */
-    function _getBNBPrice()
-        internal
-        view
-        returns (
-            uint112,
-            uint112,
-            uint32
-        )
-    {
-        return IPancakePair(pancakePairAddress).getReserves();
     }
 
     /** PRIVATE FUNCTIONS */
