@@ -66,7 +66,7 @@ contract JackpotLottery is Ownable {
     event TokenUpdated(address token, string tokenId);
     event ChainlinkAggregatorUpdated(address chainlinkAggregator);
 
-    event NewLotteryCreate(
+    event NewLotteryCreated(
         uint256 indexed lotteryId,
         address indexed owner,
         address token,
@@ -194,7 +194,7 @@ contract JackpotLottery is Ownable {
         priceRequestId = chainlinkAggregator.requestCryptoPrice(index, _tokenId);
         lotteries[index] = lottery;
 
-        emit NewLotteryCreate(index, msg.sender, _token, _ticketPrice, _startTime, _endTime);
+        emit NewLotteryCreated(index, msg.sender, _token, _ticketPrice, _startTime, _endTime);
     }
 
     /**
