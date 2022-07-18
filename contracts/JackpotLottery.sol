@@ -403,7 +403,6 @@ contract JackpotLottery is Ownable {
 
     /** PRIVATE FUNCTIONS */
     function refundIfOver(uint256 _price) private {
-        require(_price >= 0 && msg.value >= _price, "No need to refund");
         if (msg.value > _price) {
             payable(msg.sender).transfer(msg.value - _price);
         }
