@@ -44,6 +44,8 @@ contract JackpotLottery is Ownable {
         uint256 ticketPrice; // USD
         uint256 startTime;
         uint256 endTime;
+        uint256[] prizePool; // 0: BNB, 1: myToken, 2: Partner token
+        //TOOD; check current balance of prize pool
         uint16[] winningNumbers;
     }
 
@@ -174,6 +176,7 @@ contract JackpotLottery is Ownable {
             lotteryStatus = Status.NotStarted;
         }
         uint16[] memory winningNumbers = new uint16[](SIZE_OF_NUMBER);
+        uint256[] memory prizePool = new uint256[](3);
         LotteryInfo memory lottery = LotteryInfo(
             index,
             _token,
@@ -184,6 +187,7 @@ contract JackpotLottery is Ownable {
             _ticketPrice,
             _startTime,
             _endTime,
+            prizePool,
             winningNumbers
         );
         // request token price update
@@ -213,6 +217,8 @@ contract JackpotLottery is Ownable {
         require(msg.value >= amount * _numOfTickets, "Insufficient amount");
         // refund
         refundIfOver(amount * _numOfTickets);
+        // increase prize pool for BNB
+        lotteries[_lotteryId].prizePool[0] += amount * _numOfTickets;
         // mint tickets
         ticket.batchMint(msg.sender, lottery.lotteryId, _numOfTickets, _nums);
 
@@ -239,6 +245,8 @@ contract JackpotLottery is Ownable {
         }
         uint256 tokenPerTicket = (lottery.ticketPrice * 10**18) / myTokenPrice / 10**18;
         myToken.transferFrom(msg.sender, address(this), tokenPerTicket * _numOfTickets);
+        // increase prize pool for MyToken
+        lotteries[_lotteryId].prizePool[1] += tokenPerTicket * _numOfTickets;
         // mint tickets
         ticket.batchMint(msg.sender, lottery.lotteryId, _numOfTickets, _nums);
 
@@ -265,6 +273,8 @@ contract JackpotLottery is Ownable {
         }
         uint256 tokenPerTicket = (lottery.ticketPrice * 10**18) / lottery.tokenPrice / 10**18;
         IERC20(lottery.token).transferFrom(msg.sender, address(this), tokenPerTicket * _numOfTickets);
+        // increase prize pool for Partner Token
+        lotteries[_lotteryId].prizePool[2] += tokenPerTicket * _numOfTickets;
         // mint tickets
         ticket.batchMint(msg.sender, lottery.lotteryId, _numOfTickets, _nums);
 
@@ -280,13 +290,29 @@ contract JackpotLottery is Ownable {
         LotteryInfo memory lottery = lotteries[_lotteryId];
         require(block.timestamp >= lottery.endTime, "Lottery is not end yet");
         require(lottery.status == Status.Completed, "Winning numbers are not revealed yet");
+        uint256[] memory numOfWinners = ticket.getNumOfWinners(_lotteryId);
+        uint8[5] memory percentagesPerMatches = [35, 15, 10, 10, 30];
+        uint256 PRECEISION = 10**18;
 
         for (uint256 i = 0; i < _ticketIds.length; i++) {
             require(ticket.getOwnerOfTicket(_ticketIds[i]) == msg.sender, "Invalid owner");
             if (!ticket.getStatusOfTicket(_ticketIds[i])) {
                 require(ticket.claimTicket(_ticketIds[i], _lotteryId), "Invalid ticket numbers");
-                uint8 matches = _findMatches(ticket.getTicketNumer(_ticketIds[i]), lottery.winningNumbers);
-                //TODO; give rewards
+                uint8 numOfMatches = _findMatches(ticket.getTicketNumer(_ticketIds[i]), lottery.winningNumbers);
+                if (numOfMatches > 1) {
+                    uint256 percent = (percentagesPerMatches[numOfMatches - 2] * PRECEISION) /
+                        numOfWinners[numOfMatches - 2];
+                    address payable owner = payable(ticket.getOwnerOfTicket(_ticketIds[i]));
+                    // transfer BNB to winner
+                    uint256 bnbPrize = (lottery.prizePool[0] * percent) / PRECEISION / 10**2;
+                    owner.transfer(bnbPrize);
+                    // transfer myToken to winner
+                    uint256 myTokenPrize = (lottery.prizePool[1] * percent) / PRECEISION / 10**2;
+                    myToken.transferFrom(address(this), owner, myTokenPrize);
+                    // transfer PartnerToken to winner
+                    uint256 partnerTokenPrize = (lottery.prizePool[2] * percent) / PRECEISION / 10**2;
+                    IERC20(lottery.token).transferFrom(address(this), owner, partnerTokenPrize);
+                }
             }
         }
 
@@ -310,7 +336,8 @@ contract JackpotLottery is Ownable {
 
         lotteries[_lotteryId].status = Status.Closed;
         lotteries[_lotteryId].winningNumbers = _splitNumber(_randomNumber);
-        //TODO; check all tickets and give rewards
+        // calculate winner counts
+        ticket.countWinners(_lotteryId, lotteries[_lotteryId].winningNumbers);
         emit WinningNumberRevealed(_lotteryId, lotteries[_lotteryId].winningNumbers);
     }
 

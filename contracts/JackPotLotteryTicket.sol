@@ -19,6 +19,8 @@ contract JackpotLotteryTicket is ERC1155, Ownable {
     mapping(uint256 => TicketInfo) internal ticketInfo;
     // lottery id => TicketInfo
     mapping(uint256 => TicketInfo[]) internal lotteryTickets;
+    // lottery id => number of winners
+    mapping(uint256 => uint256[]) internal winners;
 
     //-------------------------------------------------------------------------
     // EVENTS
@@ -67,8 +69,8 @@ contract JackpotLotteryTicket is ERC1155, Ownable {
         return ticketInfo[_ticketId].claimed;
     }
 
-    function getTickersOfLottery(uint256 _lotteryId) external view onlyLottery returns (TicketInfo[] memory) {
-        return lotteryTickets[_lotteryId];
+    function getNumOfWinners(uint256 _lotteryId) external view onlyLottery returns (uint256[] memory) {
+        return winners[_lotteryId];
     }
 
     /** EXTERNAL FUNCTIONS */
@@ -125,5 +127,25 @@ contract JackpotLotteryTicket is ERC1155, Ownable {
         ticketInfo[_ticketId].claimed = true;
         emit TicketClaimed(_ticketId, _lotteryId);
         return true;
+    }
+
+    /**
+     * @dev count winners by its matching numbers, called by lottery
+     * @param _lotteryId lottery id
+     * @param _winningNumbers winning numbers
+     */
+    function countWinners(uint256 _lotteryId, uint16[] memory _winningNumbers) external onlyLottery {
+        for (uint256 i = 0; i < lotteryTickets[_lotteryId].length; i++) {
+            TicketInfo memory ticket = lotteryTickets[_lotteryId][i];
+            uint8 numOfMatches;
+            for (uint8 j = 0; j < SIZE_OF_NUMBER; j++) {
+                if (ticket.numbers[j] == _winningNumbers[j]) {
+                    numOfMatches++;
+                }
+            }
+            if (numOfMatches > 1) {
+                winners[_lotteryId][numOfMatches - 2]++;
+            }
+        }
     }
 }
