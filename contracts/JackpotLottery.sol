@@ -39,7 +39,7 @@ contract JackpotLottery is Ownable {
         address token;
         uint256 tokenPrice;
         uint256 priceLastUpdatedTime;
-        string tokenId;
+        string tokenId; // coingecko token id
         Status status;
         uint256 ticketPrice; // USD
         uint256 startTime;
@@ -140,7 +140,7 @@ contract JackpotLottery is Ownable {
      * @param _chainlinkAggregator new chainlinkAggregator address
      */
     function setChainlinkAggregator(address _chainlinkAggregator) external onlyOwner {
-        require(_chainlinkAggregator != address(0), "Invalid ticket address");
+        require(_chainlinkAggregator != address(0), "Invalid chainlink address");
         chainlinkAggregator = IChainlinkAggregator(_chainlinkAggregator);
         emit ChainlinkAggregatorUpdated(_chainlinkAggregator);
     }
@@ -292,7 +292,7 @@ contract JackpotLottery is Ownable {
         require(lottery.status == Status.Completed, "Winning numbers are not revealed yet");
         uint256[] memory numOfWinners = ticket.getNumOfWinners(_lotteryId);
         uint8[5] memory percentagesPerMatches = [35, 15, 10, 10, 30];
-        uint256 PRECEISION = 10**18;
+        uint256 precision = 10**18;
 
         for (uint256 i = 0; i < _ticketIds.length; i++) {
             require(ticket.getOwnerOfTicket(_ticketIds[i]) == msg.sender, "Invalid owner");
@@ -300,17 +300,17 @@ contract JackpotLottery is Ownable {
                 require(ticket.claimTicket(_ticketIds[i], _lotteryId), "Invalid ticket numbers");
                 uint8 numOfMatches = _findMatches(ticket.getTicketNumer(_ticketIds[i]), lottery.winningNumbers);
                 if (numOfMatches > 1) {
-                    uint256 percent = (percentagesPerMatches[numOfMatches - 2] * PRECEISION) /
+                    uint256 percent = (percentagesPerMatches[numOfMatches - 2] * precision) /
                         numOfWinners[numOfMatches - 2];
                     address payable owner = payable(ticket.getOwnerOfTicket(_ticketIds[i]));
                     // transfer BNB to winner
-                    uint256 bnbPrize = (lottery.prizePool[0] * percent) / PRECEISION / 10**2;
+                    uint256 bnbPrize = (lottery.prizePool[0] * percent) / precision / 10**2;
                     owner.transfer(bnbPrize);
                     // transfer myToken to winner
-                    uint256 myTokenPrize = (lottery.prizePool[1] * percent) / PRECEISION / 10**2;
+                    uint256 myTokenPrize = (lottery.prizePool[1] * percent) / precision / 10**2;
                     myToken.transferFrom(address(this), owner, myTokenPrize);
                     // transfer PartnerToken to winner
-                    uint256 partnerTokenPrize = (lottery.prizePool[2] * percent) / PRECEISION / 10**2;
+                    uint256 partnerTokenPrize = (lottery.prizePool[2] * percent) / precision / 10**2;
                     IERC20(lottery.token).transferFrom(address(this), owner, partnerTokenPrize);
                 }
             }
